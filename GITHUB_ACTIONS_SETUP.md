@@ -24,7 +24,7 @@ The repository includes a GitHub Actions workflow (`.github/workflows/build-and-
 4. Click **New Access Token**
 5. Configure the token:
    - **Description**: `github-actions-k3s-metadata-backup` (or any name you prefer)
-   - **Access permissions**: **Read & Write**
+   - **Access permissions**: **Read, Write & Delete**
 6. Click **Generate**
 7. **Copy the token immediately** - you won't be able to see it again!
 
