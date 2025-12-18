@@ -1,0 +1,235 @@
+---
+# Namespace for k3s-backup
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k3s-backup
+
+---
+# ServiceAccount for k3s-backup
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k3s-backup
+  namespace: k3s-backup
+
+---
+# ClusterRole with required permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: k3s-backup-reader
+rules:
+# Read PersistentVolumes
+- apiGroups: [""]
+  resources: ["persistentvolumes", "persistentvolumeclaims", "nodes"]
+  verbs: ["get", "list"]
+# Read BWS token secret (adjust namespace/name as needed)
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+  resourceNames: ["bitwarden-machine-account"]
+# Read Longhorn backup volumes
+- apiGroups: ["longhorn.io"]
+  resources: ["backupvolumes"]
+  verbs: ["get", "list"]
+
+---
+# ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k3s-backup-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: k3s-backup-reader
+subjects:
+- kind: ServiceAccount
+  name: k3s-backup
+  namespace: k3s-backup
+
+---
+# RoleBinding for external-secrets namespace (to read BWS token)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: k3s-backup-read-bws-token
+  namespace: external-secrets
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: k3s-backup-read-bws-token
+subjects:
+- kind: ServiceAccount
+  name: k3s-backup
+  namespace: k3s-backup
+
+---
+# Role to read BWS token secret
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: k3s-backup-read-bws-token
+  namespace: external-secrets
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+  resourceNames: ["bitwarden-machine-account"]
+
+---
+# ConfigMap with configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k3s-backup-config
+  namespace: k3s-backup
+data:
+  # Cluster configuration
+  CLUSTER_NAME: "k3sdev"
+
+  # S3 configuration
+  S3_BUCKET: "my-backup-bucket"
+  S3_ETCD_PREFIX: "k3s-etcd-snapshots/"
+  S3_LONGHORN_PREFIX: "backupstore/"
+  S3_PV_BACKUP_PREFIX: "pv-backups/"
+  S3_NODES_BACKUP_PREFIX: "nodes-backups/"
+
+  # Backup thresholds (hours)
+  ETCD_BACKUP_MAX_AGE_HOURS: "24"
+  LONGHORN_BACKUP_MAX_AGE_HOURS: "48"
+
+  # Retention (number of backups to keep)
+  RETENTION_PV_BACKUPS: "30"
+  RETENTION_NODE_BACKUPS: "30"
+
+  # Kubernetes namespaces
+  EXTERNAL_SECRETS_NAMESPACE: "external-secrets"
+  LONGHORN_NAMESPACE: "longhorn-system"
+  BWS_SECRET_NAME: "bitwarden-machine-account"
+
+  # Bitwarden configuration
+  BWS_PROJECT: "k3s"
+
+  # IMPORTANT: Replace these with your actual Bitwarden secret UUIDs
+  # Get these from: bws secret list
+  BWS_SECRET_ID_ACCESS_KEY: "your-uuid-here"
+  BWS_SECRET_ID_SECRET_KEY: "your-uuid-here"
+  BWS_SECRET_ID_ENDPOINT: "your-uuid-here"
+  BWS_SECRET_ID_REGION: "your-uuid-here"
+  BWS_SECRET_ID_BUCKET: "your-uuid-here"
+
+---
+# CronJob: Daily verification at 6 AM
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: k3s-backup-verify-daily
+  namespace: k3s-backup
+spec:
+  schedule: "0 6 * * *"  # 6 AM daily
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid  # Prevent overlapping runs
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: k3s-backup
+            job: verify-daily
+        spec:
+          serviceAccountName: k3s-backup
+          restartPolicy: OnFailure
+          containers:
+          - name: verify-all
+            image: YOUR_USERNAME/k3s-backup:latest
+            imagePullPolicy: IfNotPresent
+            args: ["verify-all", "--format", "json"]
+            envFrom:
+            - configMapRef:
+                name: k3s-backup-config
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+
+---
+# CronJob: Weekly PV backup on Sunday at 3 AM
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: k3s-backup-pvs-weekly
+  namespace: k3s-backup
+spec:
+  schedule: "0 3 * * 0"  # 3 AM Sunday
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: k3s-backup
+            job: backup-pvs
+        spec:
+          serviceAccountName: k3s-backup
+          restartPolicy: OnFailure
+          containers:
+          - name: backup-pvs
+            image: YOUR_USERNAME/k3s-backup:latest
+            imagePullPolicy: IfNotPresent
+            args: ["backup-pvs"]
+            envFrom:
+            - configMapRef:
+                name: k3s-backup-config
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+
+---
+# CronJob: Weekly node backup on Sunday at 3:05 AM
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: k3s-backup-nodes-weekly
+  namespace: k3s-backup
+spec:
+  schedule: "5 3 * * 0"  # 3:05 AM Sunday (5 min after PV backup)
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: k3s-backup
+            job: backup-nodes
+        spec:
+          serviceAccountName: k3s-backup
+          restartPolicy: OnFailure
+          containers:
+          - name: backup-nodes
+            image: YOUR_USERNAME/k3s-backup:latest
+            imagePullPolicy: IfNotPresent
+            args: ["backup-nodes"]
+            envFrom:
+            - configMapRef:
+                name: k3s-backup-config
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi

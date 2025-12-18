@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+venv
+.venv
+*.whl
+
+# Development
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Documentation (will be in repo but not in image)
+examples/
+*.md
+!requirements.txt
+
+# CI/CD
+.github/
+
+# Test files
+test_*
+tests/
+*.test
