@@ -446,7 +446,7 @@ def backup_node_token(args):
             # Secret doesn't exist - create it
             create_cmd = [
                 "bws", "secret", "create",
-                BWS_PROJECT,
+                "--project", BWS_PROJECT,
                 BWS_NODE_TOKEN_KEY,
                 node_token,
                 "--output", "json"
