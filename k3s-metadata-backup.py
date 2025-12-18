@@ -444,11 +444,12 @@ def backup_node_token(args):
                 sys.exit(1)
         else:
             # Secret doesn't exist - create it
+            # bws secret create <KEY> <VALUE> <PROJECT_ID>
             create_cmd = [
                 "bws", "secret", "create",
-                "--project", BWS_PROJECT,
-                BWS_NODE_TOKEN_KEY,
-                node_token,
+                BWS_NODE_TOKEN_KEY,  # KEY
+                node_token,          # VALUE
+                BWS_PROJECT,         # PROJECT_ID
                 "--output", "json"
             ]
             create_result = subprocess.run(create_cmd, capture_output=True, text=True, env=env)
