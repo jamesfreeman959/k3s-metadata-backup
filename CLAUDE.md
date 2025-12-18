@@ -22,8 +22,7 @@ The entire application is contained in `k3s-metadata-backup.py` - a monolithic P
 
 ### Configuration Philosophy
 True 12-factor app - ALL configuration via environment variables. No config files. Required variables:
-- `S3_BUCKET`
-- `BWS_SECRET_ID_*` (5 UUIDs for S3 credentials stored in Bitwarden)
+- `BWS_SECRET_ID_*` (5 UUIDs: access_key, secret_key, endpoint, region, bucket - all S3 credentials stored in Bitwarden)
 
 Optional variables have sensible defaults (see lines 50-76).
 
@@ -41,7 +40,6 @@ Optional variables have sensible defaults (see lines 50-76).
 pip install -r requirements.txt
 
 # Set required environment variables
-export S3_BUCKET=my-bucket
 export BWS_SECRET_ID_ACCESS_KEY=uuid
 export BWS_SECRET_ID_SECRET_KEY=uuid
 export BWS_SECRET_ID_ENDPOINT=uuid
@@ -61,7 +59,6 @@ docker build -t k3s-metadata-backup:local .
 
 # Test locally (requires kubeconfig)
 docker run -v ~/.kube/config:/root/.kube/config:ro \
-  -e S3_BUCKET=my-bucket \
   -e BWS_SECRET_ID_ACCESS_KEY=uuid \
   -e BWS_SECRET_ID_SECRET_KEY=uuid \
   -e BWS_SECRET_ID_ENDPOINT=uuid \
@@ -148,10 +145,11 @@ GitHub Actions workflow (`.github/workflows/build-and-push.yml`):
 ## Important Gotchas
 
 1. **Secret UUIDs not names**: `BWS_SECRET_ID_*` must be Bitwarden secret UUIDs (get via `bws secret list`), not human-readable names
-2. **In-cluster RBAC**: Requires ClusterRole with access to PVs, nodes, and specific secret name
-3. **Longhorn dependency**: `verify-longhorn` requires Longhorn CRDs; will fail if Longhorn not installed
-4. **Timestamp parsing**: K8s timestamps are RFC3339; tool handles both 'Z' suffix and timezone offsets (line 357)
-5. **Pruning safety**: Always keeps at least 1 backup even if retention is 0 (line 313)
+2. **BWS_PROJECT required for node token backup**: The `backup-node-token` command requires `BWS_PROJECT` to be set to a Bitwarden project UUID (get via `bws project list`), not a project name. This is the only command that needs it.
+3. **In-cluster RBAC**: Requires ClusterRole with access to PVs, nodes, and specific secret name
+4. **Longhorn dependency**: `verify-longhorn` requires Longhorn CRDs; will fail if Longhorn not installed
+5. **Timestamp parsing**: K8s timestamps are RFC3339; tool handles both 'Z' suffix and timezone offsets (line 357)
+6. **Pruning safety**: Always keeps at least 1 backup even if retention is 0 (line 313)
 
 ## Extending the Tool
 

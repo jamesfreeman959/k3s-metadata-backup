@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   k3s-backup-verify:
-    image: YOUR_USERNAME/k3s-backup:latest
+    image: YOUR_USERNAME/k3s-metadata-backup:latest
     container_name: k3s-backup-verify
     command: ["verify-all", "--format", "json"]
     volumes:
@@ -13,7 +13,6 @@ services:
       CLUSTER_NAME: k3sdev
 
       # S3 configuration
-      S3_BUCKET: my-backup-bucket
       S3_ETCD_PREFIX: k3s-etcd-snapshots/
       S3_PV_BACKUP_PREFIX: pv-backups/
       S3_NODES_BACKUP_PREFIX: nodes-backups/
@@ -35,14 +34,13 @@ services:
     restart: "no"
 
   k3s-backup-pvs:
-    image: YOUR_USERNAME/k3s-backup:latest
+    image: YOUR_USERNAME/k3s-metadata-backup:latest
     container_name: k3s-backup-pvs
     command: ["backup-pvs"]
     volumes:
       - ~/.kube/config:/root/.kube/config:ro
     environment:
       CLUSTER_NAME: k3sdev
-      S3_BUCKET: my-backup-bucket
       S3_PV_BACKUP_PREFIX: pv-backups/
       RETENTION_PV_BACKUPS: "30"
       BWS_SECRET_ID_ACCESS_KEY: your-uuid-here
@@ -53,14 +51,13 @@ services:
     restart: "no"
 
   k3s-backup-nodes:
-    image: YOUR_USERNAME/k3s-backup:latest
+    image: YOUR_USERNAME/k3s-metadata-backup:latest
     container_name: k3s-backup-nodes
     command: ["backup-nodes"]
     volumes:
       - ~/.kube/config:/root/.kube/config:ro
     environment:
       CLUSTER_NAME: k3sdev
-      S3_BUCKET: my-backup-bucket
       S3_NODES_BACKUP_PREFIX: nodes-backups/
       RETENTION_NODE_BACKUPS: "30"
       BWS_SECRET_ID_ACCESS_KEY: your-uuid-here

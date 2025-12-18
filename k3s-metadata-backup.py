@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-k3s Backup and Verification Tool
+k3s Metadata Backup and Verification Tool
 
-This script provides backup operations and verification checks for k3s clusters.
+This script provides metadata backup operations and verification checks for k3s clusters.
 It handles node token backups, PV/PVC listings, and verification of etcd and
 Longhorn backups.
 
@@ -57,11 +57,10 @@ LONGHORN_NAMESPACE = os.getenv("LONGHORN_NAMESPACE", "longhorn-system")
 BWS_SECRET_NAME = os.getenv("BWS_SECRET_NAME", "bitwarden-machine-account")
 
 # Bitwarden Secrets Manager Configuration
-BWS_PROJECT = os.getenv("BWS_PROJECT", "k3s")
+BWS_PROJECT = os.getenv("BWS_PROJECT")  # REQUIRED: Must be project UUID, not name
 BWS_NODE_TOKEN_KEY = os.getenv("BWS_NODE_TOKEN_KEY", f"k3s-node-token-{CLUSTER_NAME}")
 
 # S3 Configuration
-S3_BUCKET = os.getenv("S3_BUCKET")  # REQUIRED
 S3_ETCD_PREFIX = os.getenv("S3_ETCD_PREFIX", "k3s-etcd-snapshots/")
 S3_LONGHORN_PREFIX = os.getenv("S3_LONGHORN_PREFIX", "backupstore/")
 S3_PV_BACKUP_PREFIX = os.getenv("S3_PV_BACKUP_PREFIX", "pv-backups/")
@@ -95,7 +94,6 @@ BWS_SECRET_IDS = {
 def validate_config():
     """Validate required configuration is set"""
     required = {
-        'S3_BUCKET': S3_BUCKET,
         'BWS_SECRET_ID_ACCESS_KEY': BWS_SECRET_IDS['access_key'],
         'BWS_SECRET_ID_SECRET_KEY': BWS_SECRET_IDS['secret_key'],
         'BWS_SECRET_ID_ENDPOINT': BWS_SECRET_IDS['endpoint'],
@@ -239,8 +237,12 @@ def get_custom_resources(group: str, version: str, plural: str, namespace: Optio
         raise Exception(f"Failed to list custom resources {plural}: {e.reason}")
 
 
-def get_s3_client(bws_token: str) -> boto3.client:
-    """Create and return an S3 client using credentials from BWS"""
+def get_s3_client(bws_token: str) -> Tuple[boto3.client, str]:
+    """Create and return an S3 client and bucket name using credentials from BWS
+
+    Returns:
+        Tuple of (s3_client, bucket_name)
+    """
     # Get S3 credentials from BWS
     s3_creds = {}
 
@@ -269,15 +271,16 @@ def get_s3_client(bws_token: str) -> boto3.client:
         region_name=s3_creds['region']
     )
 
-    return s3_client
+    return s3_client, s3_creds['bucket']
 
 
-def prune_old_backups(s3_client: boto3.client, prefix: str, retention_count: int, file_pattern: str) -> Dict:
+def prune_old_backups(s3_client: boto3.client, bucket: str, prefix: str, retention_count: int, file_pattern: str) -> Dict:
     """
     Prune old backup files from S3, keeping only the most recent N files.
 
     Args:
         s3_client: Boto3 S3 client
+        bucket: S3 bucket name
         prefix: S3 prefix (folder) to search in
         retention_count: Number of most recent backups to keep
         file_pattern: Filename pattern to match (e.g., 'pv-list-', 'nodes-')
@@ -294,7 +297,7 @@ def prune_old_backups(s3_client: boto3.client, prefix: str, retention_count: int
 
     try:
         # List all objects with the given prefix
-        response = s3_client.list_objects_v2(Bucket=S3_BUCKET, Prefix=prefix)
+        response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
 
         if 'Contents' not in response:
             # No files found - nothing to prune
@@ -322,7 +325,7 @@ def prune_old_backups(s3_client: boto3.client, prefix: str, retention_count: int
         # Delete old files
         for obj in files_to_delete:
             try:
-                s3_client.delete_object(Bucket=S3_BUCKET, Key=obj['Key'])
+                s3_client.delete_object(Bucket=bucket, Key=obj['Key'])
                 result['deleted_files'].append({
                     'key': obj['Key'],
                     'last_modified': obj['LastModified'].isoformat(),
@@ -378,6 +381,12 @@ def backup_node_token(args):
     }
 
     try:
+        # Validate BWS_PROJECT is set (required for creating secrets)
+        if not BWS_PROJECT:
+            result['message'] = "BWS_PROJECT environment variable is required for backing up node tokens. Set it to your Bitwarden project UUID (get it from: bws project list)"
+            print(format_output(result, args.format))
+            sys.exit(1)
+
         # Get BWS token
         bws_token = get_bws_token()
 
@@ -630,12 +639,12 @@ def backup_pvs(args):
 
         # Upload to S3
         bws_token = get_bws_token()
-        s3_client = get_s3_client(bws_token)
+        s3_client, s3_bucket = get_s3_client(bws_token)
 
         try:
             # Upload the file
             upload_response = s3_client.put_object(
-                Bucket=S3_BUCKET,
+                Bucket=s3_bucket,
                 Key=s3_key,
                 Body=json.dumps(backup_data, indent=2),
                 ContentType='application/json',
@@ -652,14 +661,14 @@ def backup_pvs(args):
 
             # Double-check the file exists
             try:
-                head_response = s3_client.head_object(Bucket=S3_BUCKET, Key=s3_key)
+                head_response = s3_client.head_object(Bucket=s3_bucket, Key=s3_key)
                 file_size = head_response['ContentLength']
             except ClientError as e:
                 raise Exception(f"File uploaded but verification failed: {str(e)}")
 
             result['success'] = True
             result['message'] = f"PV list backed up to S3"
-            result['s3_location'] = f"s3://{S3_BUCKET}/{s3_key}"
+            result['s3_location'] = f"s3://{s3_bucket}/{s3_key}"
             result['filename'] = filename
             result['total_pvs'] = len(pvs)
             result['bound_pvs'] = bound_count
@@ -668,6 +677,7 @@ def backup_pvs(args):
             # Prune old backups (only after successful upload)
             prune_result = prune_old_backups(
                 s3_client=s3_client,
+                bucket=s3_bucket,
                 prefix=S3_PV_BACKUP_PREFIX,
                 retention_count=RETENTION_PV_BACKUPS,
                 file_pattern=f"pv-list-{CLUSTER_NAME}-"
@@ -694,7 +704,7 @@ def backup_pvs(args):
             result['error_details'] = {
                 'code': error_code,
                 'message': error_message,
-                'bucket': S3_BUCKET,
+                'bucket': s3_bucket,
                 'key': s3_key
             }
             print(format_output(result, args.format))
@@ -806,12 +816,12 @@ def backup_nodes(args):
 
         # Upload to S3
         bws_token = get_bws_token()
-        s3_client = get_s3_client(bws_token)
+        s3_client, s3_bucket = get_s3_client(bws_token)
 
         try:
             # Upload the file
             upload_response = s3_client.put_object(
-                Bucket=S3_BUCKET,
+                Bucket=s3_bucket,
                 Key=s3_key,
                 Body=json.dumps(backup_data, indent=2),
                 ContentType='application/json',
@@ -828,14 +838,14 @@ def backup_nodes(args):
 
             # Double-check the file exists
             try:
-                head_response = s3_client.head_object(Bucket=S3_BUCKET, Key=s3_key)
+                head_response = s3_client.head_object(Bucket=s3_bucket, Key=s3_key)
                 file_size = head_response['ContentLength']
             except ClientError as e:
                 raise Exception(f"File uploaded but verification failed: {str(e)}")
 
             result['success'] = True
             result['message'] = f"Node information backed up to S3"
-            result['s3_location'] = f"s3://{S3_BUCKET}/{s3_key}"
+            result['s3_location'] = f"s3://{s3_bucket}/{s3_key}"
             result['filename'] = filename
             result['total_nodes'] = len(nodes)
             result['file_size_bytes'] = file_size
@@ -843,6 +853,7 @@ def backup_nodes(args):
             # Prune old backups (only after successful upload)
             prune_result = prune_old_backups(
                 s3_client=s3_client,
+                bucket=s3_bucket,
                 prefix=S3_NODES_BACKUP_PREFIX,
                 retention_count=RETENTION_NODE_BACKUPS,
                 file_pattern=f"nodes-{CLUSTER_NAME}-"
@@ -869,7 +880,7 @@ def backup_nodes(args):
             result['error_details'] = {
                 'code': error_code,
                 'message': error_message,
-                'bucket': S3_BUCKET,
+                'bucket': s3_bucket,
                 'key': s3_key
             }
             print(format_output(result, args.format))
@@ -901,12 +912,12 @@ def verify_etcd_backups(args):
     try:
         # Get BWS token and S3 client
         bws_token = get_bws_token()
-        s3_client = get_s3_client(bws_token)
+        s3_client, s3_bucket = get_s3_client(bws_token)
 
         # List objects in S3 bucket with etcd prefix
         try:
             response = s3_client.list_objects_v2(
-                Bucket=S3_BUCKET,
+                Bucket=s3_bucket,
                 Prefix=S3_ETCD_PREFIX
             )
         except ClientError as e:
@@ -915,7 +926,7 @@ def verify_etcd_backups(args):
             sys.exit(1)
 
         if 'Contents' not in response or len(response['Contents']) == 0:
-            result['error'] = f"No etcd backups found in s3://{S3_BUCKET}/{S3_ETCD_PREFIX}"
+            result['error'] = f"No etcd backups found in s3://{s3_bucket}/{S3_ETCD_PREFIX}"
             print(format_output(result, args.format))
             sys.exit(1)
 
@@ -944,7 +955,7 @@ def verify_etcd_backups(args):
             status = "✓" if result['within_threshold'] else "✗"
             print(f"\netcd Backup Verification")
             print("=" * 80)
-            print(f"S3 Location: s3://{S3_BUCKET}/{S3_ETCD_PREFIX}")
+            print(f"S3 Location: s3://{s3_bucket}/{S3_ETCD_PREFIX}")
             print(f"Total Backups: {result['backup_count']}")
             print(f"Most Recent: {result['most_recent_backup']}")
             print(f"Backup Time: {result['most_recent_backup_time']}")
@@ -1225,7 +1236,7 @@ def verify_all(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="k3s Backup and Verification Tool - Native Kubernetes API access with Bitwarden integration",
+        description="k3s Metadata Backup and Verification Tool - Native Kubernetes API access with Bitwarden integration",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -1240,12 +1251,12 @@ Examples:
 
 Configuration:
   All configuration is via environment variables. Required variables:
-    - S3_BUCKET
     - BWS_SECRET_ID_ACCESS_KEY
     - BWS_SECRET_ID_SECRET_KEY
     - BWS_SECRET_ID_ENDPOINT
     - BWS_SECRET_ID_REGION
     - BWS_SECRET_ID_BUCKET
+    - BWS_PROJECT (only for backup-node-token command - must be project UUID)
 
   See README.md for complete configuration options and examples.
         """

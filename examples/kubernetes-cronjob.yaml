@@ -90,7 +90,6 @@ data:
   CLUSTER_NAME: "k3sdev"
 
   # S3 configuration
-  S3_BUCKET: "my-backup-bucket"
   S3_ETCD_PREFIX: "k3s-etcd-snapshots/"
   S3_LONGHORN_PREFIX: "backupstore/"
   S3_PV_BACKUP_PREFIX: "pv-backups/"
@@ -110,7 +109,7 @@ data:
   BWS_SECRET_NAME: "bitwarden-machine-account"
 
   # Bitwarden configuration
-  BWS_PROJECT: "k3s"
+  # BWS_PROJECT: "your-project-uuid-here"  # Optional: only needed for backup-node-token command (get from: bws project list)
 
   # IMPORTANT: Replace these with your actual Bitwarden secret UUIDs
   # Get these from: bws secret list

@@ -17,8 +17,7 @@ A comprehensive metadata backup and verification tool for k3s Kubernetes cluster
 ### Docker
 
 ```bash
-docker run -e S3_BUCKET=my-backup-bucket \
-  -e BWS_SECRET_ID_ACCESS_KEY=uuid \
+docker run -e BWS_SECRET_ID_ACCESS_KEY=uuid \
   -e BWS_SECRET_ID_SECRET_KEY=uuid \
   -e BWS_SECRET_ID_ENDPOINT=uuid \
   -e BWS_SECRET_ID_REGION=uuid \
@@ -72,12 +71,11 @@ All configuration is via **environment variables**:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `S3_BUCKET` | S3 bucket name | `my-backup-bucket` |
 | `BWS_SECRET_ID_ACCESS_KEY` | Bitwarden secret UUID for S3 access key | `uuid` |
 | `BWS_SECRET_ID_SECRET_KEY` | Bitwarden secret UUID for S3 secret key | `uuid` |
 | `BWS_SECRET_ID_ENDPOINT` | Bitwarden secret UUID for S3 endpoint | `uuid` |
 | `BWS_SECRET_ID_REGION` | Bitwarden secret UUID for S3 region | `uuid` |
-| `BWS_SECRET_ID_BUCKET` | Bitwarden secret UUID for S3 bucket (validation) | `uuid` |
+| `BWS_SECRET_ID_BUCKET` | Bitwarden secret UUID for S3 bucket name | `uuid` |
 
 ### Optional Variables
 
@@ -96,7 +94,7 @@ All configuration is via **environment variables**:
 | `EXTERNAL_SECRETS_NAMESPACE` | `external-secrets` | Namespace for Bitwarden secret |
 | `LONGHORN_NAMESPACE` | `longhorn-system` | Longhorn namespace |
 | `BWS_SECRET_NAME` | `bitwarden-machine-account` | Name of BWS token secret |
-| `BWS_PROJECT` | `k3s` | Bitwarden project name |
+| `BWS_PROJECT` | - | Bitwarden project UUID (required for `backup-node-token` only, get from `bws project list`) |
 
 ## Bitwarden Setup
 
@@ -110,7 +108,7 @@ Create these secrets in your Bitwarden Secrets Manager project:
 - `longhorn-s3-secret-access-key` - Your S3 secret key
 - `longhorn-s3-endpoint` - S3 endpoint (e.g., `s3.us-west-002.backblazeb2.com`)
 - `longhorn-s3-region` - S3 region (e.g., `us-west-002`)
-- `longhorn-s3-bucket` - S3 bucket name
+- `longhorn-s3-bucket` - S3 bucket name (e.g., `my-backup-bucket`)
 
 ### 2. Get Secret UUIDs
 
@@ -120,7 +118,17 @@ bws secret list
 
 Note the UUID for each secret (not the secret name).
 
-### 3. Create Kubernetes Secret with BWS Token
+### 3. Get Project UUID (Optional - only for backup-node-token command)
+
+If you plan to use the `backup-node-token` command, you need the Bitwarden project UUID:
+
+```bash
+bws project list
+```
+
+Note the UUID of your project (e.g., `12345678-1234-1234-1234-123456789abc`). Set this as the `BWS_PROJECT` environment variable.
+
+### 4. Create Kubernetes Secret with BWS Token
 
 ```bash
 kubectl create secret generic bitwarden-machine-account \
@@ -128,7 +136,7 @@ kubectl create secret generic bitwarden-machine-account \
   -n external-secrets
 ```
 
-### 4. Configure Environment Variables
+### 5. Configure Environment Variables
 
 Set the `BWS_SECRET_ID_*` environment variables to the UUIDs from step 2.
 
@@ -275,13 +283,13 @@ metadata:
   name: k3s-backup-config
 data:
   CLUSTER_NAME: "k3sdev"
-  S3_BUCKET: "my-backup-bucket"
   S3_ETCD_PREFIX: "k3s-etcd-snapshots/"
   BWS_SECRET_ID_ACCESS_KEY: "uuid-here"
   BWS_SECRET_ID_SECRET_KEY: "uuid-here"
   BWS_SECRET_ID_ENDPOINT: "uuid-here"
   BWS_SECRET_ID_REGION: "uuid-here"
   BWS_SECRET_ID_BUCKET: "uuid-here"
+  # BWS_PROJECT: "project-uuid-here"  # Optional: only needed for backup-node-token command
 ```
 
 ## Development
@@ -297,9 +305,12 @@ cd k3s-metadata-backup
 pip install -r requirements.txt
 
 # Set environment variables
-export S3_BUCKET=my-bucket
 export BWS_SECRET_ID_ACCESS_KEY=uuid
-# ... other variables
+export BWS_SECRET_ID_SECRET_KEY=uuid
+export BWS_SECRET_ID_ENDPOINT=uuid
+export BWS_SECRET_ID_REGION=uuid
+export BWS_SECRET_ID_BUCKET=uuid
+# ... other optional variables
 
 # Run locally
 ./k3s-metadata-backup.py verify-all
@@ -319,7 +330,11 @@ docker run k3s-metadata-backup:local --help
 
 # Test with your cluster (mount kubeconfig)
 docker run -v ~/.kube/config:/root/.kube/config:ro \
-  -e S3_BUCKET=my-bucket \
+  -e BWS_SECRET_ID_ACCESS_KEY=uuid \
+  -e BWS_SECRET_ID_SECRET_KEY=uuid \
+  -e BWS_SECRET_ID_ENDPOINT=uuid \
+  -e BWS_SECRET_ID_REGION=uuid \
+  -e BWS_SECRET_ID_BUCKET=uuid \
   k3s-metadata-backup:local verify-all
 ```
 
@@ -345,7 +360,7 @@ The `backup-pvs` and `backup-nodes` commands automatically prune old backups:
 
 ### Missing Required Environment Variables
 
-**Error:** `Missing required environment variables: S3_BUCKET, BWS_SECRET_ID_ACCESS_KEY`
+**Error:** `Missing required environment variables: BWS_SECRET_ID_ACCESS_KEY, BWS_SECRET_ID_BUCKET`
 
 **Solution:** Set all required environment variables listed above.
 
