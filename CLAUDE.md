@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-k3s-backup is a Python-based backup and verification tool for k3s Kubernetes clusters. It integrates with Bitwarden Secrets Manager for secure credential storage and supports S3-compatible backup storage. The tool uses the official Kubernetes Python client for native API access (no kubectl subprocess calls).
+k3s-metadata-backup is a Python-based metadata backup and verification tool for k3s Kubernetes clusters. It integrates with Bitwarden Secrets Manager for secure credential storage and supports S3-compatible backup storage. The tool uses the official Kubernetes Python client for native API access (no kubectl subprocess calls).
 
 ## Core Architecture
 
 ### Single-File Design
-The entire application is contained in `k3s-backup.py` - a monolithic Python script structured with clear sections:
+The entire application is contained in `k3s-metadata-backup.py` - a monolithic Python script structured with clear sections:
 - Configuration (lines 46-88): Environment variable loading with defaults
 - Helper functions (lines 135-366): BWS token retrieval, Kubernetes API wrappers, S3 client creation
 - Command implementations (lines 372-1220): Eight distinct commands as separate functions
@@ -49,15 +49,15 @@ export BWS_SECRET_ID_REGION=uuid
 export BWS_SECRET_ID_BUCKET=uuid
 
 # Run commands
-./k3s-backup.py verify-all
-./k3s-backup.py list-pvs
-./k3s-backup.py backup-pvs
+./k3s-metadata-backup.py verify-all
+./k3s-metadata-backup.py list-pvs
+./k3s-metadata-backup.py backup-pvs
 ```
 
 ### Docker Build and Test
 ```bash
 # Build image
-docker build -t k3s-backup:local .
+docker build -t k3s-metadata-backup:local .
 
 # Test locally (requires kubeconfig)
 docker run -v ~/.kube/config:/root/.kube/config:ro \
@@ -67,7 +67,7 @@ docker run -v ~/.kube/config:/root/.kube/config:ro \
   -e BWS_SECRET_ID_ENDPOINT=uuid \
   -e BWS_SECRET_ID_REGION=uuid \
   -e BWS_SECRET_ID_BUCKET=uuid \
-  k3s-backup:local verify-all
+  k3s-metadata-backup:local verify-all
 ```
 
 ### Kubernetes Deployment
@@ -126,16 +126,16 @@ The `verify-all` command (line 1113) runs all checks internally in JSON mode, th
 ## Testing Notes
 
 The tool has no unit tests. Testing is manual:
-1. Test help output: `./k3s-backup.py --help`
+1. Test help output: `./k3s-metadata-backup.py --help`
 2. Test commands individually against real cluster
-3. Verify JSON output parsing: `./k3s-backup.py verify-all --format json | jq`
+3. Verify JSON output parsing: `./k3s-metadata-backup.py verify-all --format json | jq`
 
 ## Docker Image Details
 
 - Base: `python:3.11-slim`
 - Non-root user (UID 1000)
 - Includes `bws` CLI (Bitwarden Secrets Manager v0.4.0)
-- Entrypoint: `python3 /app/k3s-backup.py`
+- Entrypoint: `python3 /app/k3s-metadata-backup.py`
 
 ## CI/CD
 

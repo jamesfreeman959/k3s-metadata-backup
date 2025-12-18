@@ -1,8 +1,8 @@
 FROM python:3.11-slim
 
-LABEL org.opencontainers.image.title="k3s-backup"
-LABEL org.opencontainers.image.description="k3s Backup and Verification Tool with native Kubernetes API access"
-LABEL org.opencontainers.image.source="https://github.com/YOUR_USERNAME/k3s-backup"
+LABEL org.opencontainers.image.title="k3s-metadata-backup"
+LABEL org.opencontainers.image.description="k3s Metadata Backup and Verification Tool with native Kubernetes API access"
+LABEL org.opencontainers.image.source="https://github.com/YOUR_USERNAME/k3s-metadata-backup"
 LABEL org.opencontainers.image.licenses="MIT"
 
 # Install system dependencies
@@ -26,16 +26,16 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
     rm /tmp/requirements.txt
 
 # Copy application
-COPY k3s-backup.py /app/k3s-backup.py
-RUN chmod +x /app/k3s-backup.py
+COPY k3s-metadata-backup.py /app/k3s-metadata-backup.py
+RUN chmod +x /app/k3s-metadata-backup.py
 
 WORKDIR /app
 
 # Non-root user for security
-RUN useradd -r -u 1000 -g root k3s-backup && \
-    chown -R k3s-backup:root /app
-USER k3s-backup
+RUN useradd -r -u 1000 -g root k3s-metadata-backup && \
+    chown -R k3s-metadata-backup:root /app
+USER k3s-metadata-backup
 
 # Set entrypoint
-ENTRYPOINT ["python3", "/app/k3s-backup.py"]
+ENTRYPOINT ["python3", "/app/k3s-metadata-backup.py"]
 CMD ["--help"]

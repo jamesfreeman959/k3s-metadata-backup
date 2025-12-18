@@ -1,6 +1,6 @@
-# k3s Backup and Verification Tool
+# k3s Metadata Backup and Verification Tool
 
-A comprehensive backup and verification tool for k3s Kubernetes clusters with native API access and Bitwarden Secrets Manager integration.
+A comprehensive metadata backup and verification tool for k3s Kubernetes clusters with native API access and Bitwarden Secrets Manager integration.
 
 ## Features
 
@@ -24,7 +24,7 @@ docker run -e S3_BUCKET=my-backup-bucket \
   -e BWS_SECRET_ID_REGION=uuid \
   -e BWS_SECRET_ID_BUCKET=uuid \
   -v ~/.kube/config:/root/.kube/config:ro \
-  YOUR_USERNAME/k3s-backup:latest verify-all
+  YOUR_USERNAME/k3s-metadata-backup:latest verify-all
 ```
 
 ### Kubernetes CronJob
@@ -44,7 +44,7 @@ spec:
         spec:
           containers:
           - name: verify-all
-            image: YOUR_USERNAME/k3s-backup:latest
+            image: YOUR_USERNAME/k3s-metadata-backup:latest
             args: ["verify-all", "--format", "json"]
             envFrom:
             - configMapRef:
@@ -290,8 +290,8 @@ data:
 
 ```bash
 # Clone repository
-git clone https://github.com/YOUR_USERNAME/k3s-backup.git
-cd k3s-backup
+git clone https://github.com/YOUR_USERNAME/k3s-metadata-backup.git
+cd k3s-metadata-backup
 
 # Install dependencies
 pip install -r requirements.txt
@@ -302,25 +302,25 @@ export BWS_SECRET_ID_ACCESS_KEY=uuid
 # ... other variables
 
 # Run locally
-./k3s-backup.py verify-all
+./k3s-metadata-backup.py verify-all
 ```
 
 ### Build Docker Image
 
 ```bash
-docker build -t k3s-backup:local .
+docker build -t k3s-metadata-backup:local .
 ```
 
 ### Run Tests
 
 ```bash
 # Test help output
-docker run k3s-backup:local --help
+docker run k3s-metadata-backup:local --help
 
 # Test with your cluster (mount kubeconfig)
 docker run -v ~/.kube/config:/root/.kube/config:ro \
   -e S3_BUCKET=my-bucket \
-  k3s-backup:local verify-all
+  k3s-metadata-backup:local verify-all
 ```
 
 ## Automatic Pruning
@@ -384,9 +384,9 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Support
 
-- **Issues:** https://github.com/YOUR_USERNAME/k3s-backup/issues
+- **Issues:** https://github.com/YOUR_USERNAME/k3s-metadata-backup/issues
 - **Documentation:** See this README and [examples/](examples/)
-- **Discussions:** https://github.com/YOUR_USERNAME/k3s-backup/discussions
+- **Discussions:** https://github.com/YOUR_USERNAME/k3s-metadata-backup/discussions
 
 ## Acknowledgments
 

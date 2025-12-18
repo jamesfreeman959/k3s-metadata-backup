@@ -144,7 +144,7 @@ spec:
           restartPolicy: OnFailure
           containers:
           - name: verify-all
-            image: YOUR_USERNAME/k3s-backup:latest
+            image: YOUR_USERNAME/k3s-metadata-backup:latest
             imagePullPolicy: IfNotPresent
             args: ["verify-all", "--format", "json"]
             envFrom:
@@ -182,7 +182,7 @@ spec:
           restartPolicy: OnFailure
           containers:
           - name: backup-pvs
-            image: YOUR_USERNAME/k3s-backup:latest
+            image: YOUR_USERNAME/k3s-metadata-backup:latest
             imagePullPolicy: IfNotPresent
             args: ["backup-pvs"]
             envFrom:
@@ -220,7 +220,7 @@ spec:
           restartPolicy: OnFailure
           containers:
           - name: backup-nodes
-            image: YOUR_USERNAME/k3s-backup:latest
+            image: YOUR_USERNAME/k3s-metadata-backup:latest
             imagePullPolicy: IfNotPresent
             args: ["backup-nodes"]
             envFrom:
