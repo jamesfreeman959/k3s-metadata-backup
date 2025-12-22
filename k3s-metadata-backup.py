@@ -409,17 +409,30 @@ def backup_node_token(args):
             print(format_output(result, args.format))
             sys.exit(1)
 
-        # Check if secret already exists in BWS
+        # Check if secret already exists in BWS by listing secrets and filtering by key
+        # Note: bws secret get requires UUID, not key name
         env = os.environ.copy()
         env['BWS_ACCESS_TOKEN'] = bws_token
 
-        check_cmd = ["bws", "secret", "get", BWS_NODE_TOKEN_KEY, "--output", "json"]
-        check_result = subprocess.run(check_cmd, capture_output=True, text=True, env=env)
+        list_cmd = ["bws", "secret", "list", BWS_PROJECT, "--output", "json"]
+        list_result = subprocess.run(list_cmd, capture_output=True, text=True, env=env)
 
-        if check_result.returncode == 0:
-            # Secret exists - update it
-            try:
-                existing_secret = json.loads(check_result.stdout)
+        if list_result.returncode != 0:
+            result['message'] = f"Failed to list secrets from BWS: {list_result.stderr}"
+            print(format_output(result, args.format))
+            sys.exit(1)
+
+        try:
+            secrets = json.loads(list_result.stdout)
+            # Find secret with matching key
+            existing_secret = None
+            for secret in secrets:
+                if secret.get('key') == BWS_NODE_TOKEN_KEY:
+                    existing_secret = secret
+                    break
+
+            if existing_secret:
+                # Secret exists - update it
                 secret_id = existing_secret['id']
 
                 # Update the secret
@@ -437,31 +450,30 @@ def backup_node_token(args):
                 result['success'] = True
                 result['message'] = f"Node token updated in BWS (key: {BWS_NODE_TOKEN_KEY})"
                 result['action'] = 'updated'
+            else:
+                # Secret doesn't exist - create it
+                # bws secret create <KEY> <VALUE> <PROJECT_ID>
+                create_cmd = [
+                    "bws", "secret", "create",
+                    BWS_NODE_TOKEN_KEY,  # KEY
+                    node_token,          # VALUE
+                    BWS_PROJECT,         # PROJECT_ID
+                    "--output", "json"
+                ]
+                create_result = subprocess.run(create_cmd, capture_output=True, text=True, env=env)
 
-            except json.JSONDecodeError:
-                result['message'] = "Failed to parse existing secret data from BWS"
-                print(format_output(result, args.format))
-                sys.exit(1)
-        else:
-            # Secret doesn't exist - create it
-            # bws secret create <KEY> <VALUE> <PROJECT_ID>
-            create_cmd = [
-                "bws", "secret", "create",
-                BWS_NODE_TOKEN_KEY,  # KEY
-                node_token,          # VALUE
-                BWS_PROJECT,         # PROJECT_ID
-                "--output", "json"
-            ]
-            create_result = subprocess.run(create_cmd, capture_output=True, text=True, env=env)
+                if create_result.returncode != 0:
+                    result['message'] = f"Failed to create node token in BWS: {create_result.stderr}"
+                    print(format_output(result, args.format))
+                    sys.exit(1)
 
-            if create_result.returncode != 0:
-                result['message'] = f"Failed to create node token in BWS: {create_result.stderr}"
-                print(format_output(result, args.format))
-                sys.exit(1)
-
-            result['success'] = True
-            result['message'] = f"Node token created in BWS (key: {BWS_NODE_TOKEN_KEY})"
-            result['action'] = 'created'
+                result['success'] = True
+                result['message'] = f"Node token created in BWS (key: {BWS_NODE_TOKEN_KEY})"
+                result['action'] = 'created'
+        except json.JSONDecodeError:
+            result['message'] = "Failed to parse secrets list from BWS"
+            print(format_output(result, args.format))
+            sys.exit(1)
 
         if args.format == 'json':
             print(format_output(result, args.format))
@@ -488,29 +500,51 @@ def check_node_token(args):
         # Get BWS token
         bws_token = get_bws_token()
 
-        # Check if secret exists in BWS
+        # Check if secret exists in BWS by listing all secrets and filtering by key
+        # Note: bws secret get requires UUID, not key name
         env = os.environ.copy()
         env['BWS_ACCESS_TOKEN'] = bws_token
 
-        cmd = ["bws", "secret", "get", BWS_NODE_TOKEN_KEY, "--output", "json"]
-        check_result = subprocess.run(cmd, capture_output=True, text=True, env=env)
-
-        if check_result.returncode == 0:
-            result['success'] = True
-            result['exists'] = True
-            result['message'] = f"Node token found in BWS (key: {BWS_NODE_TOKEN_KEY})"
-
-            try:
-                secret_data = json.loads(check_result.stdout)
-                result['secret_id'] = secret_data.get('id')
-                result['created_at'] = secret_data.get('creationDate')
-                result['updated_at'] = secret_data.get('revisionDate')
-            except json.JSONDecodeError:
-                pass
+        # List all secrets in the project
+        if not BWS_PROJECT:
+            # If no project specified, list all secrets across all projects
+            cmd = ["bws", "secret", "list", "--output", "json"]
         else:
-            result['success'] = True
-            result['exists'] = False
-            result['message'] = f"Node token NOT found in BWS (key: {BWS_NODE_TOKEN_KEY})"
+            cmd = ["bws", "secret", "list", BWS_PROJECT, "--output", "json"]
+
+        list_result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+
+        if list_result.returncode != 0:
+            result['success'] = False
+            result['message'] = f"Failed to list secrets from BWS: {list_result.stderr}"
+            print(format_output(result, args.format))
+            sys.exit(1)
+
+        try:
+            secrets = json.loads(list_result.stdout)
+            # Find secret with matching key
+            matching_secret = None
+            for secret in secrets:
+                if secret.get('key') == BWS_NODE_TOKEN_KEY:
+                    matching_secret = secret
+                    break
+
+            if matching_secret:
+                result['success'] = True
+                result['exists'] = True
+                result['message'] = f"Node token found in BWS (key: {BWS_NODE_TOKEN_KEY})"
+                result['secret_id'] = matching_secret.get('id')
+                result['created_at'] = matching_secret.get('creationDate')
+                result['updated_at'] = matching_secret.get('revisionDate')
+            else:
+                result['success'] = True
+                result['exists'] = False
+                result['message'] = f"Node token NOT found in BWS (key: {BWS_NODE_TOKEN_KEY})"
+        except json.JSONDecodeError as e:
+            result['success'] = False
+            result['message'] = f"Failed to parse secrets list from BWS: {e}"
+            print(format_output(result, args.format))
+            sys.exit(1)
 
         if args.format == 'json':
             print(format_output(result, args.format))
